@@ -29,6 +29,8 @@ struct HttpRequest
 
 //初始化
 struct HttpRequest* HttpRequsetInit();
+//重置Http
+void HttpRequestReset(struct HttpRequest* request);
 //添加请求头
 void HttpRequestAddHeader(struct HttpRequest* request, char* key, char* value);
 //获取请求头的值
@@ -40,7 +42,7 @@ bool parseHttpRequestHead(struct HttpRequest* request, struct Buffer* readBuf);
 //解析Http请求
 bool parseHttpRequest(struct HttpRequest* request, struct HttpResponse* response, struct Buffer* readBuf, struct Buffer* writeBuf, int socket);
 //处理Http请求
-int HttpRequestprocess(struct HttpRequest* request, struct HttpResponse* response, struct Buffer* readBuf, struct Buffer* writeBuf, int cfd);
+int HttpRequestprocess(struct HttpRequest* request, struct HttpResponse* response);
 
 const char* getFileType(const char* name);
 // 发送目录

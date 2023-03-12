@@ -7,7 +7,7 @@
 void WorkerThreadInit(struct WorkerThread* thread, int index)
 {
 	thread->threadID = 0;
-	sscanf(thread->threadName, "SubWorkerThread-%s", index);
+	sprintf(thread->threadName, "SubWorkerThread-%s", index);
 	thread->evLoop = NULL;
 	pthread_mutex_init(&thread->mutex, NULL);
 	pthread_cond_init(&thread->cond, NULL);
@@ -17,7 +17,7 @@ void* subThreadRunn(void* arg)
 {
 	struct WorkerThread* thread = (struct WorkerThread*)arg;
 	pthread_mutex_lock(&thread->mutex);
-	thread->evLoop = eventLoopInitEx(NULL);
+	thread->evLoop = eventLoopInitEx(thread->threadName);
 	pthread_mutex_unlock(&thread->mutex);
 	pthread_cond_signal(&thread->cond);
 	eventLoopRun(thread->evLoop);

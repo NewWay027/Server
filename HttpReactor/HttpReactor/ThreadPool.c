@@ -20,6 +20,12 @@ void ThreadPoolRun(struct ThreadPool* pool)
 		return;
 	}
 
+	if (pool->mainLoop->threadID != pthread_self())
+	{
+		return;
+	}
+	pool->isStart = true;
+
 	if (pool->threadNum > 0)
 	{
 		for (int i = 0; i < pool->threadNum; ++i)
@@ -27,17 +33,26 @@ void ThreadPoolRun(struct ThreadPool* pool)
 			WorkerThreadInit(&pool->workerThread[i], i);
 			WorkerThreadRun(&pool->workerThread[i]);
 		}
-		
 	}
 }
 
 struct EventLoop* takeOneEventLoop(struct ThreadPool* pool)
 {
+	if (!pool->isStart)
+	{
+		return NULL;
+	}
+
+	if (pool->mainLoop->threadID != pthread_self())
+	{
+		return NULL;
+	}
+
 	struct EventLoop* evLoop = pool->mainLoop;
 	if (pool->threadNum > 0)
 	{
 		evLoop = pool->workerThread[pool->index].evLoop;
-		pool->index = ++(pool->index) % pool->threadNum;
+		pool->index = ++pool->index % pool->threadNum;
 	}
 	return evLoop;
 }

@@ -12,24 +12,28 @@ struct ChannelMap* ChannelMapInit(int size)
 	return channelMap;
 }
 
-bool ChannelMapMakeUpRoom(struct ChannelMap* channelMap, int fd)
+bool ChannelMapMakeUpRoom(struct ChannelMap* channelMap, int size, int unitSize)
 {
-	if (fd < channelMap->size)
+	if (size < channelMap->size)
 	{
 		return true;
 	}
+	int curSize= channelMap->size;
+	while (curSize < size)
+	{
+		curSize *= 2;
+	}
 
-	struct Channel** tmpMap = (struct Channel**)realloc(channelMap->list, channelMap->size + fd);
+	struct Channel** tmpMap = (struct Channel**)realloc(channelMap->list, unitSize * curSize);
 	if (NULL == tmpMap)
 	{
 		return false;
 	}
 
-	//将原来的拷贝到重新分配的内存空间
-	memcpy(tmpMap, channelMap->list, channelMap->size);
-	
+	//直接指定新的地址即可，不需要去移动数据
 	channelMap->list = tmpMap;
-	channelMap->size = channelMap->size + fd;
+	memset(channelMap->list[channelMap->size] , 0, curSize - channelMap->size);
+	channelMap->size = curSize;
 	
 	return true;
 }
@@ -42,7 +46,8 @@ void destroyChannelMap(struct ChannelMap* channelMap)
 		{
 			free(channelMap->list[i]);
 		}
-		free(channelMap);
-		channelMap = NULL;
+		free(channelMap->list);
+		channelMap->list = NULL;
 	}
+	channelMap->size = 0;
 }

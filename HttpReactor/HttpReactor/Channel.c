@@ -14,15 +14,21 @@ struct Channel* ChannelInit(int fd, int events, CallBaclFunc readCallBack, CallB
 	return channel;
 }
 
-int writeEventEnable(struct Channel* channel)
+void writeEventEnable(struct Channel* channel, bool isWrite)
 {
-	channel->events |= writeEvent;
-	return 0;
+	if (isWrite)
+	{
+		channel->events |= writeEvent;
+	}
+	else
+	{
+		channel->events = channel->events & ~writeEvent;
+	}	
 }
 
 bool isWriteEventEnable(struct Channel* channel)
 {
-	return channel->events & ~writeEvent;
+	return channel->events & writeEvent;
 }
 
 void ChannelDestroy(struct Channel* channel)

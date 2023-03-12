@@ -13,6 +13,7 @@ struct Buffer* BufferInit(int size)
 	buffer->readPos = 0;
 	buffer->writePos = 0;
 	buffer->capacity = size;
+	memset(buffer->data, 0, size);
 	return buffer;
 }
 
@@ -28,9 +29,6 @@ int bufferWritableSize(struct Buffer* buffer)
 
 int bufferAppendData(struct Buffer* buffer, const char* data, int size)
 {
-	int writable = bufferWritableSize(buffer);
-	int readable = bufferReadableSize(buffer);
-
 	if (!bufferMakeUpRoom(buffer, size))
 	{
 		exit(0);
@@ -61,24 +59,20 @@ int bufferSocketData(struct Buffer* buffer, int fd)
 	iov[1].iov_len = 40960;
 
 	int len = readv(fd, iov, 2);
-	if (len > 0)
+	if (-1 == len)
 	{
-		//判断是否用到了tmpBuf
-		if (len > writable)
-		{
-			buffer->writePos = buffer->capacity;
-			bufferAppendData(buffer, tmpBuf, len - writable);
-		}
+		return -1;
 	}
-	else if (0 == len)
+	else if (len <= writable)
 	{
-		return 0;
+		buffer->writePos += len;
 	}
 	else
 	{
-		perror("readv");
+		buffer->writePos = buffer->capacity;
+		bufferAppendData(buffer, tmpBuf, len - writable);
 	}
-	
+	free(tmpBuf);
 	return len;
 }
 
@@ -88,7 +82,7 @@ char* getBufferCRLF(char* data)
 	return ptr;
 }
 
-void bufferSendData(struct Buffer* buffer, int fd)
+int bufferSendData(struct Buffer* buffer, int fd)
 {
 	int readable = bufferReadableSize(buffer);
 	if (readable > 0)
@@ -117,24 +111,29 @@ bool bufferMakeUpRoom(struct Buffer* buffer, int size)
 	else if (buffer->readPos + writable >= size)
 	{
 		//1.先移动数据
-		strncpy(buffer->data, buffer->data + buffer->readPos, readable);
+		memcpy(buffer->data, buffer->data + buffer->readPos, readable);
+		buffer->readPos = 0;
+		buffer->writePos = readable;
 		return true;
 	}
 	//3.扩容
 	{
-		while (buffer->capacity - buffer->writePos <= size)
+		int curCapacity = buffer->capacity;
+		while (curCapacity - buffer->writePos <= size)
 		{
-			buffer->capacity *= 2;
+			curCapacity *= 2;
 		}
 
-		char* tmpbuf = (char *)realloc(buffer->data, buffer->capacity);
+		char* tmpbuf = (char *)realloc(buffer->data, curCapacity);
 		if (NULL == tmpbuf)
 		{
 			exit(0);
 		}
+	
+		memset(buffer->data + buffer->capacity, 0, curCapacity - buffer->capacity);
 
-		strncpy(tmpbuf, buffer->data, buffer->writePos);
 		buffer->data = tmpbuf;
+		buffer->capacity = curCapacity;
 		return true;
 	}
 
@@ -143,5 +142,12 @@ bool bufferMakeUpRoom(struct Buffer* buffer, int size)
 
 void bufferDestroy(struct Buffer* buffer)
 {
+	if (NULL != buffer)
+	{
+		if (NULL != buffer->data)
+		{
+			free(buffer->data);
+		}
+	}
 	free(buffer);
 }

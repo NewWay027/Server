@@ -24,7 +24,7 @@ int bufferSocketData(struct Buffer * buffer, int fd);
 //获取换行位置
 char* getBufferCRLF(char * data);
 //发送数据
-void bufferSendData(struct Buffer* buffer, int fd);
+int bufferSendData(struct Buffer* buffer, int fd);
 //扩容
 bool bufferMakeUpRoom(struct Buffer* buffer, int size);
 //销毁

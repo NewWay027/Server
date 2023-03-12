@@ -3,10 +3,13 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include <sys/stat.h>
 #include "HttpRequest.h"
+#include "TcpConnection.h"
 #include "Buffer.h"
 
 #define HEADNUM 12
@@ -17,11 +20,21 @@ struct HttpRequest* HttpRequsetInit()
 	request->url = NULL;
 	request->method = NULL;
 	request->version = NULL;
-	request->httpRequestHeader = (struct HttpRequestHead*)malloc(HEADNUM * sizeof(struct HttpRequestHead));
-	memset(request->httpRequestHeader, 0, HEADNUM * sizeof(struct HttpRequestHead));
+	request->httpRequestHeader = (struct HttpRequestHead*)calloc(HEADNUM , sizeof(struct HttpRequestHead));
 	request->curStatus = HttpReqLine;
 	request->httpRequestNum = 0;
 	return request;
+}
+
+void HttpRequestReset(struct HttpRequest* request)
+{
+    free(request->url);
+    free(request->method);
+    free(request->version);
+    request->url = NULL;
+    request->method = NULL;
+    request->version = NULL;
+    request->curStatus = HttpReqLine;
 }
 
 void HttpRequestAddHeader(struct HttpRequest* request, char* key, char* value)
@@ -86,10 +99,12 @@ bool parseHttpRequestHead(struct HttpRequest* request, struct Buffer* readBuf)
 		{
 			char* key = (char*)malloc(middle - start + 1);
 			strncpy(key, start, middle - start);
+            key[middle - start] = '\0';
             start = middle + 2;
 
 			char* value = (char*)malloc(end - start + 1);
 			strncpy(value, start, end - start);
+            value[middle - start] = '\0';
 
             HttpRequestAddHeader(request, key, value);
 			readBuf->readPos = readBuf->readPos + lineSapce + 2;
@@ -120,22 +135,37 @@ bool parseHttpRequest(struct HttpRequest* request, struct HttpResponse* response
 		case HttpReqHead:
 			flag = parseHttpRequestHead(request, readBuf);
 			break;
+        case HttpReqBody:
+            break;
 		}
+
+        if (!flag)
+        {
+            return flag;
+        }
+
+        if (request->curStatus == HttpReqDone)
+        {
+            //解析完就要开始处理
+            HttpRequestprocess(request, response);
+            //准备响应数据
+            HttpResponsePrepareMsg(response, writeBuf, socket);
+        }
 	}
 
-	//解析完就要开始处理
-    HttpRequestprocess(request, response, readBuf, writeBuf, socket);
-    //准备响应数据
-    HttpResponsePrepareMsg(response, writeBuf, socket);
+    //还原解析状态
+    request->curStatus = HttpReqLine;
 	return flag;
 }
 
-int HttpRequestprocess(struct HttpRequest* request, struct HttpResponse* response, struct Buffer* readBuf, struct Buffer* writeBuf, int cfd)
+int HttpRequestprocess(struct HttpRequest* request, struct HttpResponse* response)
 {
 	if (0 != strcasecmp("get", request->method))
 	{
 		return -1;
 	}
+
+    decodeMsg(request->url, request->url);
 
 	char* file = NULL;
 	if (0 == strcmp(request->url, "/"))
@@ -146,7 +176,7 @@ int HttpRequestprocess(struct HttpRequest* request, struct HttpResponse* respons
 	{
 		file = request->url + 1;
 	}
-    //decodeMsg(file, file);
+    
 	struct stat st;
 	
 	int ret = stat(file, &st);
@@ -158,7 +188,7 @@ int HttpRequestprocess(struct HttpRequest* request, struct HttpResponse* respons
 		strcpy(response->statusMsg, "Not Found");
 		HttpResponseAddHeader(response, "Content-Type", getFileType("404.html"));
         response->senDataFunc = sendFile;
-		return;
+		return -1;
 	}
 
 	response->curStatusCode = OK;
@@ -273,13 +303,18 @@ int sendDir(const char* dirName, struct Buffer *sendBuf, int cfd)
         }
         //send(cfd, buf, strlen(buf), 0);
         bufferAppendString(sendBuf, buf);
+#ifdef MSG_SEND_AUTO
+        bufferSendData(sendBuf, cfd);
+#endif // MSG_SEND_AUTO
         memset(buf, 0, sizeof(buf));
         free(namelist[i]);
     }
     sprintf(buf, "</table></body></html>");
-    //send(cfd, buf, strlen(buf), 0);
+
     bufferAppendString(sendBuf, buf);
+#ifdef MSG_SEND_AUTO
     bufferSendData(sendBuf, cfd);
+#endif // MSG_SEND_AUTO
     free(namelist);
     return 0;
 }
@@ -298,9 +333,9 @@ int sendFile(const char* fileName, struct Buffer* sendBuf, int cfd)
         if (len > 0)
         {
             bufferAppendData(sendBuf, buf, len);
+#ifdef MSG_SEND_AUTO
             bufferSendData(sendBuf, cfd);
-            //send(cfd, buf, len, 0);
-            //usleep(10); // 这非常重要
+#endif // MSG_SEND_AUTO
         }
         else if (len == 0)
         {
@@ -377,13 +412,16 @@ void HttpRequestDestroy(struct HttpRequest* request)
         return;
     }
 
-    free(request->method);
-    free(request->url);
-    free(request->version);
-    for (int i = 0; i < request->httpRequestNum; i++)
+    HttpRequestReset(request);
+
+    if (NULL != request->httpRequestHeader)
     {
-        free(request->httpRequestHeader[i].key);
-        free(request->httpRequestHeader[i].value);
+        for (int i = 0; i < request->httpRequestNum; i++)
+        {
+            free(request->httpRequestHeader[i].key);
+            free(request->httpRequestHeader[i].value);
+        }
+        free(request->httpRequestHeader);
     }
 
     free(request);

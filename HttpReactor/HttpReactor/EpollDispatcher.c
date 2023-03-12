@@ -36,6 +36,7 @@ void *epollInit()
 	if (-1 == epollData->epfd)
 	{
 		perror("epoll_create");
+		exit(0);
 	}
 	epollData->events = (struct epoll_event*)calloc(EpollNum, sizeof(struct epoll_event));
 	return epollData;
@@ -47,6 +48,7 @@ void epollAdd(struct Channel* channel, struct EventLoop* evLoop)
 	if (-1 == ret)
 	{
 		perror("epoll_ctl");
+		exit(0);
 	}
 }
 
@@ -56,7 +58,9 @@ void epollRemove(struct Channel* channel, struct EventLoop* evLoop)
 	if (-1 == ret)
 	{
 		perror("epoll_ctl");
+		exit(0);
 	}
+	channel->destroyCallBack(channel->arg);
 }
 
 void epollModify(struct Channel* channel, struct EventLoop* evLoop)
@@ -65,6 +69,7 @@ void epollModify(struct Channel* channel, struct EventLoop* evLoop)
 	if (-1 == ret)
 	{
 		perror("epoll_ctl");
+		exit(0);
 	}
 }
 
@@ -72,21 +77,27 @@ void epollDispatch(struct EventLoop* evLoop, int timeout)
 {
 	struct EpollDispatcherData* epollData = (struct EpollDispatcherData*)evLoop->dispatcherData;
 
-	int num = epoll_wait(epollData->epfd, epollData->events, 1024, timeout * 1000);
+	int num = epoll_wait(epollData->epfd, epollData->events, EpollNum, timeout * 1000);
 
 	if (-1 == num)
 	{
 		perror("epoll_wait");
+		exit(0);
 	}
 
 	for (int i = 0; i < num; i++)
 	{
 		int fd = epollData->events[i].data.fd;
-		if (epollData->events[i].events == EPOLLIN)
+		int event = epollData->events[i].events;
+		if (event & EPOLLERR || event & EPOLLHUP)
+		{
+			continue;
+		}
+		if (event & EPOLLIN)
 		{
 			eventActive(evLoop, fd, readEvent);
 		}
-		if (epollData->events[i].events == EPOLLOUT)
+		if (event & EPOLLOUT)
 		{
 			eventActive(evLoop, fd, writeEvent);
 		}
@@ -105,21 +116,17 @@ int epollCtl(struct Channel* channel, struct EventLoop* evLoop, int type)
 {
 	struct EpollDispatcherData* epollData = (struct EpollDispatcherData*)evLoop->dispatcherData;
 	
-	int ret;
 	struct epoll_event ev;
-	
-	if (channel->events == readEvent)
-	{
-		ev.data.fd = channel->fd;
-		ev.events = EPOLLIN;
-		ret = epoll_ctl(epollData->epfd, type, channel->fd, &ev);
+	ev.data.fd = channel->fd;
+	if (channel->events & readEvent)
+	{	
+		ev.events |= EPOLLIN;
 	}
-	if (channel->events == writeEvent)
+	if (channel->events & writeEvent)
 	{
-		ev.data.fd = channel->fd;
-		ev.events = EPOLLOUT;
-		ret = epoll_ctl(epollData->epfd, type, channel->fd, &ev);
+		ev.events |= EPOLLOUT;
 	}
 
+	int ret = epoll_ctl(epollData->epfd, type, channel->fd, &ev);
 	return ret;
 }

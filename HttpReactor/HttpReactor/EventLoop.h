@@ -64,3 +64,5 @@ void eventLoopDel(struct EventLoop* evLoop, struct Channel * channel);
 void eventLoopMod(struct EventLoop* evLoop, struct Channel* channel);
 //ªΩ–—œﬂ≥Ã
 void wakeUpSubThread(struct EventLoop* evLoop);
+// Õ∑≈
+int channelDestroy(struct EventLoop* evLoop, struct Channel* channel);

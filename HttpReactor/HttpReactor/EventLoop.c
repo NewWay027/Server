@@ -2,6 +2,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include "ChannelMap.h"
 #include "EventLoop.h"
@@ -17,6 +18,14 @@ void wakeUpSubThread(struct EventLoop* evLoop)
 	char* msg = "send msg";
 	send(evLoop->socketPair[1], msg, strlen(msg), 0);
 	return;
+}
+
+int channelDestroy(struct EventLoop* evLoop, struct Channel* channel)
+{
+	evLoop->channelMap->list[channel->fd] = NULL;
+	close(channel->fd);
+	free(channel);
+	return 0;
 }
 
 
@@ -37,7 +46,7 @@ struct EventLoop* eventLoopInitEx(char* name)
 	evLoop->head = evLoop->tail = NULL;
 	evLoop->channelMap = ChannelMapInit(128);
 	evLoop->threadID = pthread_self();
-	strcpy(evLoop->threadName, name == NULL ? "subThread" : name);	
+	strcpy(evLoop->threadName, name == NULL ? "MainThread" : name);	
 	pthread_mutex_init(&evLoop->mutex, NULL);
 	//添加一对socketPair用于唤醒
 	socketpair(AF_UNIX, SOCK_STREAM, 0, evLoop->socketPair);
@@ -50,6 +59,12 @@ struct EventLoop* eventLoopInitEx(char* name)
 void eventLoopRun(struct EventLoop* evLoop)
 {
 	assert(NULL != evLoop);
+
+	//启动的线程ID和当前线程ID比较
+	if (evLoop->threadID != pthread_self())
+	{
+		return;
+	}
 
 	while (!evLoop->isQuit)
 	{
@@ -66,11 +81,11 @@ void eventActive(struct EventLoop* evLoop, int fd, int type)
 
 	if (fd == channel->fd)
 	{
-		if (type == readEvent)
+		if (type & readEvent)
 		{
 			channel->readCallBack(channel->arg);
 		}
-		else if (type == writeEvent)
+		else if (type & writeEvent)
 		{
 			channel->writeCallBack(channel->arg);
 		}
@@ -143,7 +158,7 @@ void eventLoopAdd(struct EventLoop* evLoop, struct Channel* channel)
 	int size = evLoop->channelMap->size;
 	if (fd >= size)
 	{
-		if (!ChannelMapMakeUpRoom(evLoop->channelMap, fd))
+		if (!ChannelMapMakeUpRoom(evLoop->channelMap, fd, sizeof(struct Channel*)))
 		{
 			return;
 		}
